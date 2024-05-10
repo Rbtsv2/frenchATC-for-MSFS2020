@@ -1,5 +1,13 @@
 import os
 import json
+from colorama import Fore, Back, Style
+
+
+def info()->bool:
+
+    print(Fore.GREEN + "✅ CHARGEMENT DU MODULE MAKER" + Style.RESET_ALL)
+    return True
+
 
 def maker(airport)->dict:
     """

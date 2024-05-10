@@ -1,7 +1,7 @@
 import os
 
-
 try:
+    from config import *
     import argparse
     import queue
     import sounddevice as sd
@@ -9,58 +9,46 @@ try:
     import json
     from colorama import Fore, Back, Style
     import time
+    import sys
+    import pygame
 except Exception as e:
-    print("atc.py : Impossible d'importer les modules nécessaires. Exécutez le programme 'libraries_installer.bat'. " + str(e))
+    print("❌ Impossible d'importer les modules nécessaires. Exécutez le programme 'libraries_installer.bat'. " + str(e))
     os.system("pause")
     exit()
 
 try:
+    from gtts import gTTS
     import Files.atc_paroles as atc_paroles
     import Files.atc_fs as atc_fs
+    import Files.atc_meteo as atc_meteo
     import Files.data_maker as data_maker
     import Files.atc_display as aff
-    from Files.atc_meteo import DATA_PROVIDER
-except:
-    print("Installation incomplète ou corrompue. Impossible d'exécuter le programme.")
 
-print(f"Informations météo délivrées par {DATA_PROVIDER}")
+except:
+    print("❌ Installation incomplète ou corrompue. Impossible d'exécuter le programme.")
+
+
 q = queue.Queue()
 
-alphabet_min = "abcdefghijklmnopqrstuvwxyz"
-alphabet_maj = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-alphabetAero = ["alpha","bravo","charlie","delta","echo","fox","golf","hotel","india","juliet","kilo","lima","mike","november","oscar","papa","quebec","romeo","sierra","tango","uniform","victor","whisky","x-ray","yankee","zulu"]
+# affichage des chargements modules et parametre
+#atc_paroles.info()
+atc_fs.info()
+data_maker.info()
+#atc_meteo.info()
+#aff.config(q)
+aff.start()
 
-airportData = {"OACI":"NONE"}
+pygame.mixer.init()
 
-callsignD = "ASXGS"
-aff.clear()
-aff.display(Fore.YELLOW + "En attente du démarrage d'un vol pour commencer..." + Style.RESET_ALL)
-# while "ASXGS" in callsignD or callsignD == "ne":
-#     callsignD = atc_fs.getImmatOfAircraft()
-if not(len(callsignD) == 6 and "-" in callsignD and (callsignD[0] == "F" or callsignD == "f")):
-    if not("ASXGS" in callsignD):
-        aff.display(Fore.RED + "Immatriculation invalide : " + callsignD  + " n'est pas de la forme 'F-XXXX' ! " + Style.RESET_ALL)
-    while not(len(callsignD) == 6 and "-" in callsignD and (callsignD[0] == "F" or callsignD == "f")):
-        callsignD = atc_fs.getImmatOfAircraft()
-aff.display(Fore.GREEN + "Immatriculation perso détectée... Démarrage... (" + callsignD + ")" + Style.RESET_ALL)
+print(Fore.YELLOW + "En attente du démarrage d'un vol pour commencer..." + Style.RESET_ALL)
 
-callsign = ""
-carractsLettres = [0,4,5]
-caract = 0
+callsignD = atc_fs.getImmatOfAircraft()
+
+callsign = atc_fs.getCallSign(callsignD)
 
 
 
-if len(callsignD) == 6 and "-" in callsignD and (callsignD[0] == "F" or callsignD == "f"):
-    for i in callsignD:
-        if i in alphabet_min and caract in carractsLettres:
-            callsign += alphabetAero[alphabet_min.index(i)]
-            callsign += " "
-        elif i in alphabet_maj and caract in carractsLettres:
-            callsign += alphabetAero[alphabet_maj.index(i)]
-            callsign += " "
-        caract += 1
 
-aff.display(Fore.BLUE + "Indicatif d'appel :" + callsign + Style.RESET_ALL)
 
 authFrequencies = []
 precedAuthFrequencies = []
@@ -74,8 +62,13 @@ lastfrequency = frequency
 
 rep = [clearance,ifNeedCollation,frequency]
 
+
+
 def printHead():
+
     aff.clear()
+    if WITHOUT_FS:
+        aff.display("# WITHOUT FS#")
     aff.display('#' * 80)
     if frequency in authFrequencies:
         aff.display("#" + 'Service ATC en fonction !'+ Fore.GREEN +' Bon vol !' + Style.RESET_ALL + ((27-len(frequency))*" ") + Back.CYAN + Fore.BLACK + " " + callsignD + " " + Style.RESET_ALL + " " + Back.BLUE + " " + frequency + " mHz " + Style.RESET_ALL + " #")
@@ -92,24 +85,17 @@ def int_or_str(text):
     except ValueError:
         return text
 
-aff.display(Fore.GREEN +' Démarrage des services en cours... Veuillez patienter...' + Style.RESET_ALL)
-
 def callback(indata, frames, time, status):
     """This is called (from a separate thread) for each audio block."""
     #if status:
         #print(status, file=sys.stderr)
     q.put(bytes(indata))
 
-
-
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument(
     '-l', '--list-devices', action='store_true',
     help='show list of audio devices and exit')
 args, remaining = parser.parse_known_args()
-
-aff.display(Fore.GREEN +' Détection des périphériques... Veuillez patienter...' + Style.RESET_ALL)
-
 if args.list_devices:
     #print(sd.query_devices())
     parser.exit(0)
@@ -153,24 +139,42 @@ try:
     with sd.RawInputStream(samplerate=args.samplerate, blocksize = 8000, device=args.device, dtype='int16',
                             channels=1, callback=callback):
             printHead()
-
+           
             rec = vosk.KaldiRecognizer(model, args.samplerate)
             while True:
+                
+            
+                testSiTransfertRespNecessaire = atc_paroles.transfertResponsabilitesNecessaire(callsign,frequency,authFrequencies)
 
-                testSiTransfertRespNecessaire = atc_paroles.transfertResponsabilitesNecessaire(callsign,frequency,authFrequencies,)
+           
+                # print(testSiTransfertRespNecessaire)
+                # exit()
+                
                 if testSiTransfertRespNecessaire:
                     ifNeedCollation = "fréquence"
 
                 try:
+                    # recupere un aeroport en fonction de la latitude longitude
+                    # On recuperer latitude et longitude de l'avion à travers Flight Simulator
+                    # On soumet longitude et latitude au limites des zones géré par les aeroports pour identifié l'aeroport concerné 
                     if atc_fs.updatePositionAndFrequencies()[1] != "None":
+                      
                         airportData = data_maker.maker(atc_fs.updatePositionAndFrequencies()[1])
-                    else:
+                       
+                    else:   
                         airportData = {"OACI":"NONE"}
+
                     authFrequencies = atc_fs.updatePositionAndFrequencies()[0]
+
                 except TypeError:
                     pass
-                aff.defTitleOfWindow("ATC by Nash115" + " ("+callsignD+")")
+               
+            
+                #aff.defTitleOfWindow("ATC" + " ("+callsignD+")")
+                
                 frequency = str(atc_fs.getFrequencyInAircraft(frequency))
+
+      
                 if frequency != lastfrequency:
                     aff.display(Back.BLUE +"Fréquence modifiée :" + frequency +Style.RESET_ALL)
                     lastfrequency = frequency
@@ -180,27 +184,67 @@ try:
                     precedAuthFrequencies = authFrequencies
 
                 data = q.get()
+           
                 if rec.AcceptWaveform(data):
                     pilot = json.loads(rec.FinalResult())
                     if "fox" in pilot['text']:
-                        os.popen("Sounds\debut.wav")
+
+                        debut_sound = pygame.mixer.Sound("Sounds/debut.wav")
+                        debut_sound.play()
+
+
+
                     if not(str(pilot['text']) == "")  and "fox" in str(pilot['text']):
-                        #print(pilot['text'])
-                        if ifNeedCollation == False:
+
+                        if "météo" in pilot['text']:
+                           
+
+                            # marche pas très bien de demande mété par recup vocal du code OACI... plouip :~\
+                            #phrase_pilote = pilot['text']
+                            #mots = phrase_pilote.split()
+                            # appels_tour_controle = [mot for mot in mots if len(mot) <= 4]
+                            # oaci_pilot = appels_tour_controle[-1] if appels_tour_controle else None
+                            # print(oaci_pilot)
+                         
+                            if airportData["OACI"] != "None":
+                               
+                                weather_data = atc_meteo.get_meteo(airportData["OACI"])
+
+                                cloud_base = ""
+                                if weather_data['clouds_base'] is not None and weather_data['clouds_base'] != "":
+                                    cloud_base = "à une altitude de " + str(weather_data['clouds_base']) + " pieds"
+
+
+                                meteo_text = f"{callsign}, la météo actuelle à {weather_data['name']} annonce des conditions météorologiques {weather_data['clouds_text']} {cloud_base}, " \
+                                            f"la visibilité est de {weather_data['visib']} kilomètres, le vent de {weather_data['wdir']} degrés avec une vitesse de {weather_data['wspd']} nœuds, " \
+                                            f"la température est de {weather_data['temp']} degrés Celsius, et le point de rosée est de {weather_data['dewp']} degrés Celsius." \
+                                            f"La pression atmosphérique QNH est situé à {weather_data['altim']} hPa"
+                                
+                                meteo_tts = gTTS(meteo_text, lang="fr", slow=False)
+                                meteo_tts.save("conv.mp3")
+                                airport_sound = pygame.mixer.Sound("conv.mp3")
+                                airport_sound.play()
+
+
+                        elif ifNeedCollation == False:
                             if airportData["OACI"] != "None":
                                 rep = atc_paroles.reconaissanceATC(str(pilot['text']),callsign,clearance,frequency,airportData)
                             ifNeedCollation = rep[1]
                         elif "répéter" in pilot['text'] or "répétez" in pilot['text'] or "répété" in pilot['text']:
                             time.sleep(0.3)
-                            os.popen("conv.mp3")
+                            #os.popen("conv.mp3")
+                            debut_sound = pygame.mixer.Sound("conv.mp3")
+                            debut_sound.play()
                         else:
-                            #print("En attente de collation '" + ifNeedCollation + "' ... ")
+                            print("En attente de collation '" + ifNeedCollation + "' ... ")
                             if ifNeedCollation in pilot['text'] or "copié" in pilot['text'] or "copier" in pilot['text']:
                                 ifNeedCollation = False
                                 aff.display(Back.GREEN +"Collationné"+Style.RESET_ALL)
-                                os.popen("Sounds\collation.wav")
+                                #os.popen("Sounds/collation.wav")
+                                debut_sound = pygame.mixer.Sound("Sounds/collation.wav")
+                                debut_sound.play()
                             else:
-                                aff.display(Fore.RED +"Merci de collationner !"+Style.RESET_ALL + "("+ifNeedCollation+")")
+                                aff.display(Fore.RED +"Merci de collationner ! "+Style.RESET_ALL + " ("+ifNeedCollation+")")
                                 aff.display(pilot['text'])
                         if rep[0] != "":
                             clearance = rep[0]
@@ -211,7 +255,6 @@ try:
                 
                 if dump_fn is not None:
                     dump_fn.write(data)
-
 
 except KeyboardInterrupt:
     print('\nDone')

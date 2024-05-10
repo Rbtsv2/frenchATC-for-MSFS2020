@@ -1,4 +1,8 @@
 import os
+from colorama import Fore, Back, Style
+import pygame
+
+
 try:
     from gtts import gTTS
     import Files.atc_meteo as atc_meteo
@@ -10,6 +14,20 @@ except Exception as e:
 
 capteeBefore = False
 
+
+def info()->bool:
+    print(Fore.GREEN + "✅ CHARGEMENT DU MODULE PAROLES" + Style.RESET_ALL)
+    pygame.mixer.init()
+    text = "TEST"
+    tts = gTTS(text, lang="fr", slow=False)
+    tts.save("conv.mp3")
+    debut_sound = pygame.mixer.Sound("conv.mp3")
+    debut_sound.play()
+
+
+
+    return True
+
 def transfertResponsabilitesNecessaire(callsign:str,frequency:str,captee:list)->bool:
     """
     Permet de renvoyer True si 
@@ -17,7 +35,7 @@ def transfertResponsabilitesNecessaire(callsign:str,frequency:str,captee:list)->
     Post : booléen correspondant si un transfert de responsabilités est nécessaire
     """
     global capteeBefore
-
+    pygame.mixer.init()
     if frequency in captee:
         capteeBefore = True
     else:
@@ -25,7 +43,9 @@ def transfertResponsabilitesNecessaire(callsign:str,frequency:str,captee:list)->
             capteeBefore = False
             textS = gTTS(text= callsign + " vous sortez de ma zone de contrôle, vous pouvez changer de fréquence.", lang="fr", slow=False)
             textS.save("conv.mp3")
-            os.popen("conv.mp3")
+            #os.popen("conv.mp3")
+            debut_sound = pygame.mixer.Sound("conv.mp3")
+            debut_sound.play()
             return True
     return False
 
@@ -64,38 +84,50 @@ def recoFreqType(freq,airportData):
     return returner
 
 def reconaissanceATC(pilot,callsign,clr,frequency,airportData):
+
+    pygame.mixer.init()
     needCollation = False
     clearance = clr
     texte = callsign + ", je n'ai pas compris votre demande, pouvez vous répéter ?"
     #fonctions
 
     if frequency == "122.800" or "auto" in recoFreqType(frequency,airportData): # UNICOM
-        os.popen("Sounds\collation.wav")
+        #os.popen("Sounds\collation.wav")
+        print('types de fréquences : unicom')
+        debut_sound = pygame.mixer.Sound("Sounds/collation.wav")
+        debut_sound.play()
         needCollation = False
         return clearance,needCollation
 
     if "grd" in recoFreqType(frequency,airportData): ### FREQUENCE SOL ###
+
+        print('types de fréquences : grd')
+
         #Premier contact
         if "bonjour" in pilot:
             texte = callsign + " bonjour, transmettez"
 
         #Clearance tours de pistes
         elif "tours de piste" in pilot:
-            meteoPrise = atc_meteo.getMeteo(airportData["OACI"])
+          
+            weather_data = atc_meteo.get_meteo(airportData["OACI"])
             if airportData["runways"][airportData["rwyTakeoff"]] != []:
-                texte = callsign + " Transpondeur 7000, QNH" + meteoPrise[2] + ", Roulez jusqu'au point d'arret " + str(airportData["runways"][airportData["rwyTakeoff"]][randint(0,len(airportData["runways"][airportData["rwyTakeoff"]])-1)]) + " de la piste " + str([airportData["rwyTakeoff"]])
+                texte = callsign + " Transpondeur 7000, QNH" + str(weather_data['altim']) + ", Roulez jusqu'au point d'arret " + str(airportData["runways"][airportData["rwyTakeoff"]][randint(0,len(airportData["runways"][airportData["rwyTakeoff"]])-1)]) + " de la piste " + str(airportData["rwyTakeoff"])
             else:
-                texte = callsign + " Transpondeur 7000, QNH" + meteoPrise[2] + ", Roulez jusqu'à la piste " + str([airportData["rwyTakeoff"]])
+                texte = callsign + " Transpondeur 7000, QNH" + str(weather_data['altim']) + ", Roulez jusqu'à la piste " + str(airportData["rwyTakeoff"])
             needCollation = "point d'arrêt"
             clearance = "tourDePiste"
 
         #Clearance départ dans l'axe
         elif "départ dans l'axe" in pilot:
-            meteoPrise = atc_meteo.getMeteo(airportData["OACI"])
+            weather_data = atc_meteo.get_meteo(airportData["OACI"])
             if airportData["runways"][airportData["rwyTakeoff"]] != []:
-                texte = callsign + " Transpondeur 7000, QNH" + meteoPrise[2] + ", Roulez jusqu'au point d'arret " + str(airportData["runways"][airportData["rwyTakeoff"]][randint(0,len(airportData["runways"][airportData["rwyTakeoff"]])-1)]) + " de la piste " + str([airportData["rwyTakeoff"]])
+
+                axe = str(airportData["runways"][airportData["rwyTakeoff"]][randint(0, len(airportData["runways"][airportData["rwyTakeoff"]]) - 1)])
+                texte = callsign + " Transpondeur 7000, QNH " + str(weather_data['altim']) + ", Roulez jusqu'au point d'arrêt " + axe + " de la piste " + str(airportData["rwyTakeoff"])
+
             else:
-                texte = callsign + " Transpondeur 7000, QNH" + meteoPrise[2] + ", Roulez jusqu'à la piste " + str([airportData["rwyTakeoff"]])
+                texte = callsign + " Transpondeur 7000, QNH" + str(weather_data['altim']) + ", Roulez jusqu'à la piste " + str(airportData["rwyTakeoff"])
             needCollation = "point d'arrêt"
             clearance = "departDsAxe"
 
@@ -127,17 +159,23 @@ def reconaissanceATC(pilot,callsign,clr,frequency,airportData):
 
 
 
+
     if "twr" in recoFreqType(frequency,airportData) or "app" in recoFreqType(frequency,airportData): ###FREQUENCE TOUR ###
         #aligner et décoller
+        print('types de fréquences : twr')
+
         if "point d'arrêt" in pilot:
+            print('point arret')
             if clearance == "tourDePiste":
-                meteoPrise = atc_meteo.getMeteo(airportData["OACI"])
-                texte = callsign + " alignez vous piste "+ str([airportData["rwyTakeoff"]]) +", autorisé décollage, vent " + str(meteoPrise[0])  + " degrés, " + str(meteoPrise[1]) + " noeuds, rappelez en vent arrière"
+                weather_data = atc_meteo.get_meteo(airportData["OACI"])
+                texte = callsign + " alignez vous piste "+ str([airportData["rwyTakeoff"]]) +", autorisé décollage, vent " + str(weather_data['wspd'])  + " degrés, " + str(weather_data['temp']) + " noeuds, rappelez en vent arrière"
                 needCollation = "autorisé décollage"
                 clearance = "air"
             else:
-                meteoPrise = atc_meteo.getMeteo(airportData["OACI"])
-                texte = callsign + " alignez vous piste "+ str([airportData["rwyTakeoff"]]) +", autorisé décollage, vent " + str(meteoPrise[0])  + " degrés, " + str(meteoPrise[1]) + " noeuds."
+                print('rien')
+                weather_data = atc_meteo.get_meteo(airportData["OACI"])
+                texte = callsign + " alignez vous piste "+ str([airportData["rwyTakeoff"]]) +", autorisé décollage, vent " + str(weather_data['wspd'])  + " degrés, " + str(weather_data['temp']) + " noeuds."
+                
                 needCollation = "autorisé décollage"
                 clearance = "air"
 
@@ -156,18 +194,18 @@ def reconaissanceATC(pilot,callsign,clr,frequency,airportData):
         #Clearance atérissages touchés & passages bas
         elif "finale" in pilot:
             if "touch" in pilot and clearance == "air":
-                meteoPrise = atc_meteo.getMeteo(airportData["OACI"])
-                texte = callsign + " autorisé touché piste "+ str([airportData["rwyLanding"]]) +", vent " + str(meteoPrise[0])  + " degrés, " + str(meteoPrise[1]) + " noeuds."
+                weather_data = atc_meteo.get_meteo(airportData["OACI"])
+                texte = callsign + " autorisé touché piste "+ str([airportData["rwyLanding"]]) +", vent " + str(weather_data['wdir'])  + " degrés, " + str(weather_data['wspd']) + " noeuds."
                 needCollation = "autorisé"
                 clearance = "air"
             elif "passage bas" in pilot and clearance == "air":
-                meteoPrise = atc_meteo.getMeteo(airportData["OACI"])
-                texte = callsign + " autorisé passage bas piste "+ str([airportData["rwyLanding"]]) +", vent " + str(meteoPrise[0])  + " degrés, " + str(meteoPrise[1]) + " noeuds."
+                weather_data = atc_meteo.get_meteo(airportData["OACI"])
+                texte = callsign + " autorisé passage bas piste "+ str([airportData["rwyLanding"]]) +", vent " + str(weather_data['wdir'])  + " degrés, " + str(weather_data['wspd']) + " noeuds."
                 needCollation = "autorisé"
                 clearance = "air"
             elif clearance == "air":
-                meteoPrise = atc_meteo.getMeteo(airportData["OACI"])
-                texte = callsign + " autorisé atérissage piste "+ str([airportData["rwyLanding"]]) +", vent " + str(meteoPrise[0])  + " degrés, " + str(meteoPrise[1]) + " noeuds."
+                weather_data = atc_meteo.get_meteo(airportData["OACI"])
+                texte = callsign + " autorisé atérissage piste "+ str([airportData["rwyLanding"]]) +", vent " + str(weather_data['wdir'])  + " degrés, " + str(weather_data['wspd']) + " noeuds."
                 needCollation = "autorisé atterrissage"
                 clearance = "atteri"
 
@@ -196,10 +234,13 @@ def reconaissanceATC(pilot,callsign,clr,frequency,airportData):
     #     texte = "Fréquence invalide..."
 
     if "je n'ai pas compris votre demande, pouvez vous répéter ?" in texte:
-            print(frequency+" <- "+pilot)
+        print(frequency+" <- "+pilot)
 
     if not(str(recoFreqType(frequency,airportData)) == 'pasReconnu'):
         textS = gTTS(text=texte, lang="fr", slow=False)
         textS.save("conv.mp3")
-        os.popen("conv.mp3")
+
+        debut_sound = pygame.mixer.Sound("conv.mp3")
+        debut_sound.play()
+        #os.popen("conv.mp3")
     return clearance,needCollation
